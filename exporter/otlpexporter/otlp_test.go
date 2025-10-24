@@ -6,8 +6,10 @@ package otlpexporter
 import (
 	"context"
 	"net"
+	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -437,6 +439,7 @@ func TestSendTracesWhenEndpointHasHttpScheme(t *testing.T) {
 			cfg.ClientConfig.Endpoint = test.scheme + ln.Addr().String()
 			if test.useTLS {
 				cfg.ClientConfig.TLS.InsecureSkipVerify = true
+				checkFIPS140Only(t)
 			}
 			set := exportertest.NewNopSettings(factory.Type())
 			exp, err := factory.CreateTraces(context.Background(), set, cfg)
@@ -1010,6 +1013,7 @@ func TestSendProfilesWhenEndpointHasHttpScheme(t *testing.T) {
 			cfg.ClientConfig.Endpoint = test.scheme + ln.Addr().String()
 			if test.useTLS {
 				cfg.ClientConfig.TLS.InsecureSkipVerify = true
+				checkFIPS140Only(t)
 			}
 			set := exportertest.NewNopSettings(factory.Type())
 			exp, err := factory.(xexporter.Factory).CreateProfiles(context.Background(), set, cfg)
@@ -1038,5 +1042,14 @@ func TestSendProfilesWhenEndpointHasHttpScheme(t *testing.T) {
 			// Ensure it was received empty.
 			assert.EqualValues(t, 0, rcv.totalItems.Load())
 		})
+	}
+}
+
+func checkFIPS140Only(t *testing.T) {
+	// X25519 curves are not supported when GODEBUG=fips140=only is set, so we
+	// detect if it is and conditionally also add the tlsmklem=0 flag to disable
+	// these curves. See: https://pkg.go.dev/crypto/tls#Config.CurvePreferences
+	if strings.Contains(os.Getenv("GODEBUG"), "fips140=only") {
+		t.Setenv("GODEBUG", os.Getenv("GODEBUG")+",tlsmlkem=0")
 	}
 }
